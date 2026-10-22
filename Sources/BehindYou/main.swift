@@ -7,9 +7,9 @@ switch command {
 case .help:
     print(Config.usage)
     exit(0)
-case .exorcise:
-    Journal.exorcise()
-    print("  exorcised. everything is back where it was.")
+case .lightsOn:
+    Journal.restore()
+    print("  the lights are on. everything is back where it was.")
     exit(0)
 case .listCameras:
     for d in GazeWatcher.cameras() { print("  \(d.localizedName)") }
@@ -32,14 +32,16 @@ case let .preview(photo):
     }
     print("  wrote \(out.path)")
     exit(0)
+case .calibrate:
+    Calibration(cfg).run()
 case .haunt:
     break
 }
 
 // A previous run that crashed gets cleaned up before anything else.
 if Journal.load() != nil {
-    log("found a previous haunting that never ended — exorcising it first.")
-    Journal.exorcise()
+    log("found a haunting that never ended — turning the lights back on first.")
+    Journal.restore()
 }
 
 print("""
@@ -50,7 +52,7 @@ print("""
 
   While this runs, every time you look away it will get closer, and it may:
     · stand on your screen          · darken your real wallpaper
-    · move your cursor              · whisper, send you a notification
+    · turn the lights out (Dark Mode)
     · photograph you (kept in memory only, never uploaded)
 
   Everything is put back when it ends, when you press Ctrl-C, or via the 🕯 menu.
@@ -65,25 +67,28 @@ guard let screen = NSScreen.main else {
     print("no screen")
     exit(1)
 }
+var cfgLive = cfg
+if cfg.lightsOut, !Appearance.preflight() {
+    log("no permission to change the appearance — skipping lights out.")
+    cfgLive.lightsOut = false
+}
 let overlay = Overlay(screen: screen, debug: cfg.debug)
 let sound = Sound(enabled: cfg.sound)
-let watcher: Watcher
-if cfg.autopilot {
-    watcher = AutopilotWatcher(photo: cfg.autopilotPhoto)
-} else if cfg.useCamera {
-    watcher = GazeWatcher(cfg)
-} else {
-    watcher = IdleWatcher(threshold: cfg.idleThreshold)
-}
-let haunter = Haunter(cfg: cfg, watcher: watcher, overlay: overlay, sound: sound)
+let watcher: Watcher = cfg.autopilot ? AutopilotWatcher(photo: cfg.autopilotPhoto) : GazeWatcher(cfg)
+let haunter = Haunter(cfg: cfgLive, watcher: watcher, overlay: overlay, sound: sound)
+let recorder = cfg.record.map { _ in Recorder() }
 
-func end(_ message: String) -> Never {
+func end(_ message: String) {
     watcher.stop()
     sound.stop()
     overlay.close()
-    Journal.exorcise(quiet: true)
+    Journal.restore(quiet: true)
     print("\n  \(message)\n")
-    exit(0)
+    guard let recorder else { exit(0) }
+    recorder.stop {
+        log("saved \(cfg.record!)")
+        exit(0)
+    }
 }
 
 // Menu-bar candle: always one click from making it stop.
@@ -97,33 +102,46 @@ final class Candle: NSObject {
         let menu = NSMenu()
         menu.addItem(progress)
         menu.addItem(.separator())
-        let ex = NSMenuItem(title: "Exorcise (restore everything & quit)", action: #selector(exorcise), keyEquivalent: "q")
-        ex.target = self
-        menu.addItem(ex)
+        let on = NSMenuItem(title: "Turn the lights on (restore everything & quit)", action: #selector(lightsOn), keyEquivalent: "q")
+        on.target = self
+        menu.addItem(on)
         item.menu = menu
     }
 
-    @objc func exorcise() { end("exorcised. everything is back where it was.") }
+    @objc func lightsOn() { end("the lights are on. everything is back where it was.") }
 }
 let candle = Candle()
 
 haunter.onStage = { s, n in candle.progress.title = "it has moved \(s) of \(n) times" }
-haunter.onFinished = { end("it's gone. for now. your wallpaper is back.") }
+haunter.onFinished = { end("it's gone. for now. the lights are back on.") }
 
 var signalSources: [DispatchSourceSignal] = []
 for sig in [SIGINT, SIGTERM, SIGHUP] {
     signal(sig, SIG_IGN)
     let src = DispatchSource.makeSignalSource(signal: sig, queue: .main)
-    src.setEventHandler { end("exorcised. everything is back where it was.") }
+    src.setEventHandler { end("the lights are on. everything is back where it was.") }
     src.resume()
     signalSources.append(src)
 }
 
-watcher.start { error in
-    if let error {
-        print("  \(error)")
-        end("nothing happened.")
+func begin() {
+    watcher.start { error in
+        if let error {
+            print("  \(error)")
+            end("nothing happened.")
+            return
+        }
+        if cfg.pip, let gaze = watcher as? GazeWatcher { overlay.showCamera(gaze.session) }
     }
+}
+
+if let recorder, let path = cfg.record {
+    recorder.start(to: URL(fileURLWithPath: path), display: CGDirectDisplayID(screen.displayID)) { error in
+        if let error { print("  \(error)") }
+        begin()
+    }
+} else {
+    begin()
 }
 
 app.run()

@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import QuartzCore
 
@@ -62,6 +63,23 @@ final class Overlay {
         CATransaction.setDisableActions(true)
         body()
         CATransaction.commit()
+    }
+
+    /// Your own webcam in the corner — so a screen recording shows you looking away.
+    func showCamera(_ session: AVCaptureSession) {
+        let pip = AVCaptureVideoPreviewLayer(session: session)
+        pip.videoGravity = .resizeAspectFill
+        let w: CGFloat = 384, h: CGFloat = 216
+        pip.frame = CGRect(x: size.width - w - 24, y: size.height - h - 52, width: w, height: h)
+        pip.cornerRadius = 12
+        pip.masksToBounds = true
+        pip.borderWidth = 1
+        pip.borderColor = NSColor.white.withAlphaComponent(0.25).cgColor
+        if let c = pip.connection, c.isVideoMirroringSupported {
+            c.automaticallyAdjustsVideoMirroring = false
+            c.isVideoMirrored = true
+        }
+        root.addSublayer(pip)
     }
 
     func status(_ text: String) {

@@ -5,7 +5,7 @@ func log(_ s: String) {
 }
 
 /// Everything it touches is written down *before* it's touched, so it can always be put back —
-/// even after a crash (`behindyou --exorcise`).
+/// even after a crash (`behindyou --lights-on`).
 struct Journal: Codable {
     struct Wallpaper: Codable {
         var screen: UInt32
@@ -16,6 +16,8 @@ struct Journal: Codable {
     }
 
     var wallpapers: [Wallpaper] = []
+    /// Set when it switched you to Dark Mode; you were in Light Mode before.
+    var wasLight: Bool?
 
     static let dir: URL = {
         let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -24,7 +26,7 @@ struct Journal: Codable {
         return d
     }()
     static let file = dir.appendingPathComponent("journal.json")
-    /// Haunted wallpapers and photos live here and are deleted on exorcism.
+    /// Haunted wallpapers and photos live here and are deleted when the lights come back on.
     static let scratch = dir.appendingPathComponent("run", isDirectory: true)
 
     static func load() -> Journal? {
@@ -37,8 +39,12 @@ struct Journal: Codable {
     }
 
     /// Puts everything back the way it was.
-    static func exorcise(quiet: Bool = false) {
+    static func restore(quiet: Bool = false) {
         if let j = load() {
+            if j.wasLight == true {
+                Appearance.setDark(false)
+                if !quiet { log("light mode restored") }
+            }
             for w in j.wallpapers {
                 guard let screen = NSScreen.screens.first(where: { $0.displayID == w.screen }) else { continue }
                 var opts: [NSWorkspace.DesktopImageOptionKey: Any] = [:]
@@ -57,6 +63,46 @@ struct Journal: Codable {
             try? FileManager.default.removeItem(at: file)
         }
         try? FileManager.default.removeItem(at: scratch)
+    }
+}
+
+// MARK: - The lights
+
+enum Appearance {
+    static var isDark: Bool {
+        UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+    }
+
+    @discardableResult
+    static func setDark(_ dark: Bool) -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", "tell application \"System Events\" to tell appearance preferences to set dark mode to \(dark)"]
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
+    }
+
+    /// Asks for the System Events permission up front, not mid-haunt.
+    static func preflight() -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", "tell application \"System Events\" to get dark mode of appearance preferences"]
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        guard (try? p.run()) != nil else { return false }
+        p.waitUntilExit()
+        return p.terminationStatus == 0
+    }
+
+    /// While you're not looking, the lights go out. Journals first.
+    static func lightsOut() {
+        guard !isDark else { return }
+        var j = Journal.load() ?? Journal()
+        j.wasLight = true
+        j.save()
+        setDark(true)
     }
 }
 

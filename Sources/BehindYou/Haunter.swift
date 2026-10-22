@@ -4,7 +4,7 @@ import AppKit
 /// and something real changes. On the last one, it waits for you to look back.
 final class Haunter {
     enum Haunt: CaseIterable {
-        case appear, whisper, wallpaper, cursor, heartbeat, darken
+        case appear, wallpaper, heartbeat, lightsOut, darken
     }
 
     private let cfg: Config
@@ -16,7 +16,6 @@ final class Haunter {
     private var looking = true
     private var armed = false
     private var over = false
-    private var cursorUnlocked = false
     private var dimLevel: Float = 0
     private var bpm = 62.0
     private let work = DispatchQueue(label: "behindyou.photos", qos: .userInitiated)
@@ -63,7 +62,8 @@ final class Haunter {
         if stage >= cfg.stages {
             armed = true
             overlay.placeGhost(progress: 1)
-            sound.whisper("behind you", volume: 0.8)
+            // The heartbeat stops. It's right behind you.
+            sound.stopHeartbeat()
             capture(progress: 1)
             return
         }
@@ -72,7 +72,6 @@ final class Haunter {
         // Spread the haunts across however many stages there are.
         let all = Haunt.allCases, n = cfg.stages - 1
         for h in all[((stage - 1) * all.count / n)..<(stage * all.count / n)] { perform(h) }
-        if cursorUnlocked { driftCursor() }
         if dimLevel > 0 { dimLevel = min(dimLevel + 0.06, 0.4); overlay.setDim(dimLevel) }
         if bpm > 62 { bpm += 14; sound.heartbeat(bpm: bpm) }
         capture(progress: p)
@@ -82,36 +81,17 @@ final class Haunter {
         switch h {
         case .appear:
             break
-        case .whisper:
-            sound.whisper("i see you")
         case .wallpaper:
             if cfg.wallpaper { WallpaperHaunt.haunt() }
-        case .cursor:
-            cursorUnlocked = cfg.cursor
-            if cfg.notifications { notify("turn around.") }
         case .heartbeat:
             bpm = 70
             sound.heartbeat(bpm: bpm)
-            sound.whisper("closer")
+        case .lightsOut:
+            if cfg.lightsOut { Appearance.lightsOut() }
         case .darken:
             dimLevel = 0.16
             overlay.setDim(dimLevel)
-            sound.whisper("don't look")
         }
-    }
-
-    /// Your cursor drifts to where its eyes are.
-    private func driftCursor() {
-        let target = overlay.ghostEyes
-        CGWarpMouseCursorPosition(target)
-        CGAssociateMouseAndMouseCursorPosition(1)
-    }
-
-    private func notify(_ text: String) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        p.arguments = ["-e", "display notification \"\(text)\" with title \"someone\""]
-        try? p.run()
     }
 
     /// Photographs you while you aren't looking, then puts it behind you.

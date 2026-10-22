@@ -7,7 +7,6 @@ final class Sound {
     private let heart = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
     private let enabled: Bool
-    private var voice: Process?
 
     init(enabled: Bool) {
         self.enabled = enabled
@@ -79,18 +78,7 @@ final class Sound {
         fx.play()
     }
 
-    /// Uses the system "Whisper" voice.
-    func whisper(_ text: String, volume: Double = 0.6) {
-        guard enabled else { return }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        p.arguments = ["-v", "Whisper", "-r", "120", "[[volm \(volume)]] \(text)"]
-        try? p.run()
-        voice = p
-    }
-
     func stop() {
-        voice?.terminate()
         heart.stop()
         fx.stop()
         engine.stop()
