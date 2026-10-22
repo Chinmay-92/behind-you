@@ -67,7 +67,13 @@ enum GhostArt {
         wisp.scale = Float(w) * 0.09
         let soft = wisp.outputImage!.applyingGaussianBlur(sigma: Double(w) * 0.005).cropped(to: rect)
         let out = bitmap(width, height)
-        out.draw(ci.createCGImage(soft, from: rect)!, in: rect)
+        let shape = ci.createCGImage(soft, from: rect)!
+        // A faint pale edge, so it still reads against dark windows.
+        out.saveGState()
+        out.setShadow(offset: .zero, blur: w * 0.03, color: CGColor(srgbRed: 0.78, green: 0.8, blue: 0.86, alpha: 0.55))
+        out.draw(shape, in: rect)
+        out.restoreGState()
+        out.draw(shape, in: rect)
 
         // Eyes: pinpoints with a glow, slightly mismatched.
         let eyes = [CGPoint(x: -w * 0.034, y: h * 0.006), CGPoint(x: w * 0.036, y: h * 0.003)]

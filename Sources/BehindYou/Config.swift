@@ -25,6 +25,8 @@ struct Config {
     var blink = true
     /// How long you must be looking away before it moves.
     var minAway: TimeInterval = 0.5
+    /// You have to watch the screen this long between look-aways for the next one to count.
+    var minWatch: TimeInterval = 1.5
     /// Calm period after launch before anything can happen.
     var grace: TimeInterval = 4
 

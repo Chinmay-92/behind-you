@@ -14,6 +14,7 @@ final class Haunter {
     private var stage = 0
     private var token = 0
     private var looking = true
+    private var lookingSince = Date()
     private var armed = false
     private var over = false
     private var dimLevel: Float = 0
@@ -38,14 +39,18 @@ final class Haunter {
     }
 
     private func changed(looking now: Bool) {
+        let watched = Date().timeIntervalSince(lookingSince)
         looking = now
         token += 1
         guard !over else { return }
         if now {
+            lookingSince = Date()
             if armed { finale() } else if stage > 0, Bool.random() || stage > cfg.stages / 2 { overlay.flicker() }
             return
         }
-        guard !armed, Date().timeIntervalSince(startedAt) > cfg.grace else { return }
+        // It only moves after you've seen where it is — no burning through stages with a twitch.
+        guard !armed, Date().timeIntervalSince(startedAt) > cfg.grace, stage == 0 || watched >= cfg.minWatch
+        else { return }
         let t = token
         DispatchQueue.main.asyncAfter(deadline: .now() + cfg.minAway) { [self] in
             guard t == token, !looking, !over else { return }
